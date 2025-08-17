@@ -1,0 +1,129 @@
+# Home Assistant automation template for controlling lights, fans, and switches
+# based on presence/motion sensors, time of day, sun elevation, and brightness.
+# Handles presence sensors by using time/condition triggers as well as state.
+
+automation:
+  - alias: "Adaptive Control: Lights, Fans, Switches"
+    mode: restart
+    trigger:
+      # Trigger on presence sensor state change
+      - platform: state
+        entity_id:
+          - binary_sensor.presence_living_room
+          - binary_sensor.presence_bedroom
+      # Trigger on motion sensor state change
+      - platform: state
+        entity_id:
+          - binary_sensor.motion_living_room
+          - binary_sensor.motion_bedroom
+      # Trigger on sun elevation crossing evening threshold
+      - platform: numeric_state
+        entity_id: sun.sun
+        attribute: elevation
+        below: 6
+      - platform: numeric_state
+        entity_id: sun.sun
+        attribute: elevation
+        above: 6
+      # Trigger on brightness sensor change
+      - platform: state
+        entity_id:
+          - sensor.living_room_brightness
+          - sensor.bedroom_brightness
+      # Time pattern to re-evaluate conditions periodically (for presence sensors)
+      - platform: time_pattern
+        minutes: "/5"
+    condition:
+      - condition: or
+        conditions:
+          # Someone is present or motion detected
+          - condition: state
+            entity_id: binary_sensor.presence_living_room
+            state: "on"
+          - condition: state
+            entity_id: binary_sensor.presence_bedroom
+            state: "on"
+          - condition: state
+            entity_id: binary_sensor.motion_living_room
+            state: "on"
+          - condition: state
+            entity_id: binary_sensor.motion_bedroom
+            state: "on"
+      - condition: or
+        conditions:
+          # Evening hours (sun below 6 degrees elevation)
+          - condition: numeric_state
+            entity_id: sun.sun
+            attribute: elevation
+            below: 6
+          # Or after sunset and before sunrise
+          - condition: sun
+            after: sunset
+            before: sunrise
+      - condition: numeric_state
+        entity_id: sensor.living_room_brightness
+        below: 100
+    action:
+      - service: light.turn_on
+        target:
+          entity_id: light.living_room
+      - service: fan.turn_on
+        target:
+          entity_id: fan.living_room
+      - service: switch.turn_on
+        target:
+          entity_id: switch.living_room
+    # Optional: turn off when no presence/motion and it's bright or daytime
+  - alias: "Adaptive Control: Turn Off Devices"
+    mode: restart
+    trigger:
+      - platform: state
+        entity_id:
+          - binary_sensor.presence_living_room
+          - binary_sensor.presence_bedroom
+          - binary_sensor.motion_living_room
+          - binary_sensor.motion_bedroom
+        to: "off"
+      - platform: numeric_state
+        entity_id: sensor.living_room_brightness
+        above: 200
+      - platform: numeric_state
+        entity_id: sun.sun
+        attribute: elevation
+        above: 6
+      - platform: time_pattern
+        minutes: "/5"
+    condition:
+      - condition: and
+        conditions:
+          - condition: state
+            entity_id: binary_sensor.presence_living_room
+            state: "off"
+          - condition: state
+            entity_id: binary_sensor.presence_bedroom
+            state: "off"
+          - condition: state
+            entity_id: binary_sensor.motion_living_room
+            state: "off"
+          - condition: state
+            entity_id: binary_sensor.motion_bedroom
+            state: "off"
+      - condition: or
+        conditions:
+          - condition: numeric_state
+            entity_id: sensor.living_room_brightness
+            above: 200
+          - condition: numeric_state
+            entity_id: sun.sun
+            attribute: elevation
+            above: 6
+    action:
+      - service: light.turn_off
+        target:
+          entity_id: light.living_room
+      - service: fan.turn_off
+        target:
+          entity_id: fan.living_room
+      - service: switch.turn_off
+        target:
+          entity_id: switch.living_room
