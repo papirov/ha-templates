@@ -1,0 +1,165 @@
+blueprint:
+  name: Presence/Motion Controlled Lights, Fans, and Switches
+  description: >
+    Control lights, fans, and switches based on presence or motion sensors, with support for time of day, evening hours (sun elevation), and brightness checks.
+    Handles presence sensors whose state may not change when other conditions do, by using time and sun triggers as well.
+  domain: automation
+  input:
+    presence_sensors:
+      name: Presence Sensors
+      description: List of presence sensors (binary_sensor)
+      selector:
+        entity:
+          domain: binary_sensor
+          multiple: true
+    motion_sensors:
+      name: Motion Sensors
+      description: List of motion sensors (binary_sensor)
+      selector:
+        entity:
+          domain: binary_sensor
+          multiple: true
+    target_entities:
+      name: Target Entities
+      description: Lights, fans, or switches to control
+      selector:
+        entity:
+          domain:
+            - light
+            - fan
+            - switch
+          multiple: true
+    brightness_sensor:
+      name: (Optional) Brightness Sensor
+      description: Optional sensor for ambient brightness (lux)
+      default: []
+      selector:
+        entity:
+          domain: sensor
+          device_class: illuminance
+          multiple: false
+    min_brightness:
+      name: (Optional) Minimum Brightness (lux)
+      description: Only turn on if below this value
+      default: 100
+      selector:
+        number:
+          min: 0
+          max: 1000
+          step: 1
+          unit_of_measurement: "lux"
+    start_time:
+      name: Start Time
+      description: Time of day to allow automation (e.g., 17:00)
+      default: "00:00:00"
+      selector:
+        time: {}
+    end_time:
+      name: End Time
+      description: Time of day to stop automation (e.g., 23:59)
+      default: "23:59:59"
+      selector:
+        time: {}
+    sun_elevation:
+      name: (Optional) Sun Elevation Threshold
+      description: Only allow when sun is below this elevation (e.g., -4.0 for evening)
+      default: -4.0
+      selector:
+        number:
+          min: -90
+          max: 90
+          step: 0.1
+          unit_of_measurement: "°"
+    off_delay:
+      name: Off Delay (seconds)
+      description: Time to wait after no presence/motion before turning off
+      default: 300
+      selector:
+        number:
+          min: 0
+          max: 3600
+          step: 1
+          unit_of_measurement: "seconds"
+
+mode: restart
+max_exceeded: silent
+
+variables:
+  presence_sensors: !input presence_sensors
+  motion_sensors: !input motion_sensors
+  target_entities: !input target_entities
+  brightness_sensor: !input brightness_sensor
+  min_brightness: !input min_brightness
+  start_time: !input start_time
+  end_time: !input end_time
+  sun_elevation: !input sun_elevation
+  off_delay: !input off_delay
+
+trigger:
+  - platform: state
+    entity_id: !input presence_sensors
+    to: "on"
+  - platform: state
+    entity_id: !input motion_sensors
+    to: "on"
+  - platform: time
+    at: !input start_time
+  - platform: time
+    at: !input end_time
+  - platform: numeric_state
+    entity_id: sun.sun
+    attribute: elevation
+    below: !input sun_elevation
+  - platform: state
+    entity_id: !input brightness_sensor
+  - platform: homeassistant
+    event: start
+
+condition:
+  - condition: or
+    conditions:
+      - condition: state
+        entity_id: !input presence_sensors
+        state: "on"
+      - condition: state
+        entity_id: !input motion_sensors
+        state: "on"
+  - condition: time
+    after: !input start_time
+    before: !input end_time
+  - condition: numeric_state
+    entity_id: sun.sun
+    attribute: elevation
+    below: !input sun_elevation
+  - condition: or
+    conditions:
+      - condition: template
+        value_template: "{{ not (brightness_sensor | length) }}"
+      - condition: numeric_state
+        entity_id: !input brightness_sensor
+        below: !input min_brightness
+
+action:
+  - service: homeassistant.turn_on
+    target:
+      entity_id: !input target_entities
+  - wait_for_trigger:
+      - platform: state
+        entity_id: !input presence_sensors
+        to: "off"
+      - platform: state
+        entity_id: !input motion_sensors
+        to: "off"
+    timeout: !input off_delay
+    continue_on_timeout: true
+  - condition: and
+    conditions:
+      - condition: state
+        entity_id: !input presence_sensors
+        state: "off"
+      - condition: state
+        entity_id: !input motion_sensors
+        state: "off"
+  - service: homeassistant.turn_off
+    target:
+      entity_id: !input target_entities
